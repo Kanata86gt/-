@@ -2,354 +2,144 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>天動説 ↔ 地動説 シミュレーション</title>
 <style>
-  :root { --bg:#0b1020; --fg:#e9ecf1; --muted:#aeb6c2; --accent:#7bd3ff; --accent2:#ffc66d; --danger:#ff6b6b; }
-  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial; }
-  .wrap { display:grid; grid-template-columns: 1fr 360px; gap:16px; height:100%; padding:16px; box-sizing:border-box; }
-  canvas { width:100%; height:100%; background: radial-gradient(1000px 700px at 60% 40%, #121a36 0%, #0b1020 55%, #060914 100%); border-radius:12px; box-shadow: inset 0 0 60px rgba(255,255,255,0.05); }
-  .panel { display:flex; flex-direction:column; gap:12px; }
-  .card { background:#0f1731; border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px 12px; }
-  .card h2 { font-size:16px; margin:0 0 10px; color:#cfe6ff; letter-spacing:0.02em; }
-  label { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:14px; color:var(--muted); }
-  input[type="range"] { width:160px; }
-  select, input[type="number"] { width:120px; background:#0b152e; color:var(--fg); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:6px 8px; }
-  .row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:6px 0; }
-  .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
-  button { background:#14214a; color:var(--fg); border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px 12px; cursor:pointer; }
-  button:hover { background:#192a5f; }
-  .legend { display:grid; grid-template-columns: 12px auto; gap:8px 8px; align-items:center; font-size:13px; color:var(--muted); }
-  .dot { width:12px; height:12px; border-radius:50%; }
-  .dot.sun { background:var(--accent2); box-shadow:0 0 10px var(--accent2); }
-  .dot.earth { background:#74ffb2; box-shadow:0 0 10px #74ffb2; }
-  .dot.planet { background:#7bd3ff; box-shadow:0 0 10px #7bd3ff; }
-  .dot.def { background:#ff9aa2; }
-  .dot.epi { background:#c79bff; }
-  .muted { color:var(--muted); }
-  .small { font-size:12px; color:#9fb2d3; }
-  .badge { font-size:11px; padding:2px 6px; border:1px solid rgba(255,255,255,0.2); border-radius:999px; color:#cfe6ff; }
-  .footer { font-size:12px; color:#7f8aa6; }
+  body { margin:0; background:#0b1020; color:#fff; font-family:sans-serif; }
+  .wrap { display:grid; grid-template-columns: 1fr 320px; height:100vh; }
+  canvas { width:100%; height:100%; background:#060914; }
+  .panel { padding:12px; background:#111a33; overflow:auto; }
+  label { display:flex; justify-content:space-between; margin:6px 0; }
+  input[type=range] { width:160px; }
+  select, input { background:#0b152e; color:#fff; border:1px solid #333; }
+  button { margin:4px 2px; padding:6px 10px; background:#222; color:#fff; border:1px solid #555; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <canvas id="cv" aria-label="Geo-Helio Simulation"></canvas>
+  <canvas id="cv"></canvas>
   <div class="panel">
-    <div class="card">
-      <h2>コントロール</h2>
-      <div class="row">
-        <label>惑星プリセット
-          <select id="preset">
-            <option value="Mercury">Mercury（88日, 0.387 AU）</option>
-            <option value="Venus">Venus（225日, 0.723 AU）</option>
-            <option value="Mars" selected>Mars（687日, 1.524 AU）</option>
-            <option value="Jupiter">Jupiter（4333日, 5.203 AU）</option>
-            <option value="Saturn">Saturn（10759日, 9.537 AU）</option>
-          </select>
-        </label>
-      </div>
-      <div class="row">
-        <label>視点ブレンド <span class="badge"><span id="blendLabel">天動</span></span>
-          <input id="blend" type="range" min="0" max="1" step="0.001" value="0">
-        </label>
-      </div>
-      <div class="row">
-        <label>時間速度（×）<input id="speed" type="number" step="0.1" value="4"></label>
-      </div>
-      <div class="row">
-        <label>軌跡（Trail）<input id="trail" type="checkbox" checked></label>
-      </div>
-      <div class="btnrow">
-        <button id="playPause">⏸ 一時停止</button>
-        <button id="reset">⟲ リセット</button>
-        <button id="step">⟼ 1日進める</button>
-        <span class="small">日数: <span id="days">0.0</span> d</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>モデルの中身（ざっくり）</h2>
-      <div class="small">
-        地動（太陽中心）では：<br>
-        <code>r_E = R(ω_E t) · a_E</code>, <code>r_P = R(ω_P t) · a_P</code><br>
-        見かけ（地心）位置は <code>r_geo = r_P − r_E</code>。<br><br>
-        天動（エピサイクル）では：<br>
-        <code>r_def = R(ω_P t) · a_P</code>, <code>r_epi = − R(ω_E t) · a_E</code><br>
-        <code>r_def + r_epi = r_geo</code>（完全一致）。<br>
-        つまり“エピサイクル”は地球軌道ベクトルを引く操作の分解になってる。
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>凡例</h2>
-      <div class="legend">
-        <div class="dot sun"></div><div>太陽</div>
-        <div class="dot earth"></div><div>地球</div>
-        <div class="dot planet"></div><div>惑星（見かけ位置は常に一致）</div>
-        <div class="dot def"></div><div>デフェラント（惑星平均運動）</div>
-        <div class="dot epi"></div><div>エピサイクル（地球の逆向き）</div>
-      </div>
-    </div>
-
-    <div class="footer card">
-      使い方：ブレンド0で天動図。1で地動図。中間は連続遷移。<br>
-      惑星を変えると逆行の形が変わるよ（特にMarsがおすすめ）。
-    </div>
+    <h2>コントロール</h2>
+    <label>惑星
+      <select id="preset">
+        <option value="Mercury">Mercury</option>
+        <option value="Venus">Venus</option>
+        <option value="Mars" selected>Mars</option>
+        <option value="Jupiter">Jupiter</option>
+        <option value="Saturn">Saturn</option>
+      </select>
+    </label>
+    <label>視点ブレンド
+      <input id="blend" type="range" min="0" max="1" step="0.001" value="0">
+    </label>
+    <label>時間速度（×）
+      <input id="speed" type="number" value="4" step="0.1">
+    </label>
+    <label>軌跡
+      <input id="trail" type="checkbox" checked>
+    </label>
+    <button id="playPause">⏸ 一時停止</button>
+    <button id="reset">⟲ リセット</button>
+    <button id="step">⟼ 1日進める</button>
+    <p>日数: <span id="days">0.0</span> d</p>
+    <h3>凡例</h3>
+    <p style="color:#74ffb2">● 地球</p>
+    <p style="color:#ffc66d">● 太陽</p>
+    <p style="color:#7bd3ff">● 惑星</p>
+    <p style="color:#ff9aa2">● デフェラント</p>
+    <p style="color:#c79bff">● エピサイクル</p>
+    <p style="color:gold">― 見かけの地心軌道</p>
   </div>
 </div>
-
 <script>
-(() => {
-  // ===== Utilities =====
-  const TAU = Math.PI * 2;
-  const rot = (theta) => [Math.cos(theta), Math.sin(theta)];
-  const add = (a,b)=>[a[0]+b[0], a[1]+b[1]];
-  const sub = (a,b)=>[a[0]-b[0], a[1]-b[1]];
-  const mul = (k,v)=>[k*v[0], k*v[1]];
-  const dot = (a,b)=>a[0]*b[0]+a[1]*b[1];
-
-  // ===== Presets (period in days, semi-major axis in AU; circular orbits here) =====
-  const PRESETS = {
-    Mercury: { name:"Mercury", P: 87.969, a: 0.387 },
-    Venus:   { name:"Venus",   P: 224.701, a: 0.723 },
-    Earth:   { name:"Earth",   P: 365.256, a: 1.000 },
-    Mars:    { name:"Mars",    P: 686.980, a: 1.524 },
-    Jupiter: { name:"Jupiter", P: 4332.59, a: 5.203 },
-    Saturn:  { name:"Saturn",  P: 10759.22,a: 9.537 },
+(()=>{
+  const TAU=Math.PI*2;
+  const PRESETS={
+    Mercury:{P:88,a:0.387},Venus:{P:225,a:0.723},Earth:{P:365,a:1},
+    Mars:{P:687,a:1.524},Jupiter:{P:4333,a:5.203},Saturn:{P:10759,a:9.537}
   };
+  const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
+  const presetSel=document.getElementById("preset");
+  const blendSlider=document.getElementById("blend");
+  const speedInput=document.getElementById("speed");
+  const trailChk=document.getElementById("trail");
+  const playPauseBtn=document.getElementById("playPause");
+  const resetBtn=document.getElementById("reset");
+  const stepBtn=document.getElementById("step");
+  const daysLabel=document.getElementById("days");
 
-  // ===== DOM =====
-  const cv = document.getElementById('cv');
-  const ctx = cv.getContext('2d');
-  const presetSel = document.getElementById('preset');
-  const blendSlider = document.getElementById('blend');
-  const blendLabel = document.getElementById('blendLabel');
-  const speedInput = document.getElementById('speed');
-  const trailChk = document.getElementById('trail');
-  const playPauseBtn = document.getElementById('playPause');
-  const resetBtn = document.getElementById('reset');
-  const stepBtn = document.getElementById('step');
-  const daysLabel = document.getElementById('days');
+  let planet=PRESETS[presetSel.value];
+  const earth=PRESETS.Earth;
+  let tDays=0,running=true;
+  let trailGeo=[]; const TRAIL_MAX=2000;
 
-  // ===== State =====
-  let planet = PRESETS[presetSel.value];
-  const earth = PRESETS.Earth;
-  let tDays = 0;            // simulation time in days
-  let running = true;
-  let trail = [];           // array of positions for drawing trailing path (geocentric apparent)
-  const TRAIL_MAX = 2000;
+  function resize(){cv.width=cv.clientWidth;cv.height=cv.clientHeight;}
+  window.addEventListener("resize",resize);resize();
 
-  // Responsive canvas
-  function resize() {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const rect = cv.getBoundingClientRect();
-    cv.width = Math.floor(rect.width * dpr);
-    cv.height = Math.floor(rect.height * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
-  }
-  window.addEventListener('resize', resize);
-  resize();
+  function rot(wt){return [Math.cos(wt),Math.sin(wt)];}
+  const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
+  const mul=(k,v)=>[k*v[0],k*v[1]];
+  function pos(body,t){let w=TAU/body.P;let [c,s]=rot(w*t);return [body.a*c,body.a*s];}
+  function cam(){let m=Math.max(planet.a,earth.a)+1;let scale=Math.min(cv.width,cv.height)/(2*m);return{scale,cx:cv.width/2,cy:cv.height/2};}
+  function toScreen(c,v){return[c.cx+v[0]*c.scale,c.cy-v[1]*c.scale];}
+  function circle(x,y,r,color){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fillStyle=color;ctx.fill();}
+  function line(x1,y1,x2,y2,color){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.stroke();}
 
-  // Helpers to compute positions (AU) at time tDays
-  function posEarth(t) {
-    const wE = TAU / earth.P;
-    const [cx,sy] = rot(wE * t);
-    return [earth.a*cx, earth.a*sy];
-  }
-  function posPlanetHelio(t) {
-    const wP = TAU / planet.P;
-    const [cx,sy] = rot(wP * t);
-    return [planet.a*cx, planet.a*sy];
-  }
-
-  // World to screen mapping
-  function makeCamera(blend) {
-    // pick a comfortable scale so that outer planets fit: dynamic zoom = function of selected planet
-    const margin = 40;
-    const w = cv.clientWidth, h = cv.clientHeight;
-    const maxAU = Math.max(earth.a, planet.a) * (blend<0.5 ? 1.4 : 1.2) + 0.5; // a bit of padding
-    const sx = (Math.min(w, h) - 2*margin) / (2*maxAU);
-    const scale = sx;
-    const cx = w/2, cy = h/2;
-    return { scale, cx, cy };
-  }
-  const toScreen = (camera, v) => [camera.cx + v[0]*camera.scale, camera.cy - v[1]*camera.scale];
-
-  // Drawing primitives
-  function circle(x,y,r,stroke,fill,alpha=1) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath(); ctx.arc(x,y,r,0,TAU);
-    if (fill){ ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke){ ctx.strokeStyle = stroke; ctx.stroke(); }
-    ctx.restore();
-  }
-  function line(x1,y1,x2,y2,stroke, width=1, alpha=1) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
-    ctx.lineWidth = width; ctx.strokeStyle = stroke; ctx.stroke();
-    ctx.restore();
-  }
-
-  // Main render
-  let lastTs = performance.now();
-  function tick(now) {
-    const dt = (now - lastTs) / 1000; // seconds
-    lastTs = now;
-    if (running) {
-      const speed = parseFloat(speedInput.value) || 1; // days per real second
-      tDays += dt * speed;
+  let last=performance.now();
+  function tick(now){
+    let dt=(now-last)/1000;last=now;
+    if(running){tDays+=dt*parseFloat(speedInput.value);}
+    const rE=pos(earth,tDays);
+    const rP=pos(planet,tDays);
+    const rGeo=sub(rP,rE);
+    const rDef=rP;
+    const rEpi=mul(-1,rE);
+    trailGeo.push(rGeo.slice());if(trailGeo.length>TRAIL_MAX)trailGeo.shift();
+    if(!trailChk.checked)trailGeo=[];
+    const blend=parseFloat(blendSlider.value);
+    const camObj=cam();
+    ctx.clearRect(0,0,cv.width,cv.height);
+    // interpolate view
+    const sunV=[0,0];
+    const earthV=[(1-blend)*0+blend*rE[0],(1-blend)*0+blend*rE[1]];
+    const planetV=[(1-blend)*rGeo[0]+blend*rP[0],(1-blend)*rGeo[1]+blend*rP[1]];
+    // orbits
+    ctx.strokeStyle="rgba(255,154,162,"+(1-blend)+")";
+    ctx.beginPath();ctx.arc(camObj.cx,camObj.cy,planet.a*camObj.scale,0,TAU);ctx.stroke();
+    ctx.strokeStyle="rgba(116,255,178,"+blend+")";
+    ctx.beginPath();ctx.arc(camObj.cx,camObj.cy,earth.a*camObj.scale,0,TAU);ctx.stroke();
+    // deferent+epicycle
+    if(blend<0.99){
+      let base=toScreen(camObj,[0,0]);
+      let def=toScreen(camObj,rDef);
+      let epi=toScreen(camObj,add(rDef,rEpi));
+      line(base[0],base[1],def[0],def[1],"#ff9aa2");
+      line(def[0],def[1],epi[0],epi[1],"#c79bff");
+      circle(def[0],def[1],3,"#ff9aa2");
+      circle(epi[0],epi[1],3,"#c79bff");
     }
-
-    // Compute positions
-    const rE = posEarth(tDays);                 // Earth (AU, heliocentric)
-    const rP = posPlanetHelio(tDays);           // Planet (AU, heliocentric)
-    const rGeo = sub(rP, rE);                   // Geocentric apparent
-    const rDef = rP;                            // Deferent vector
-    const rEpi = mul(-1, rE);                   // Epicycle vector
-    const blend = parseFloat(blendSlider.value);
-
-    // Update trail
-    if (!Number.isNaN(rGeo[0])) {
-      trail.push(rGeo.slice());
-      if (trail.length > TRAIL_MAX) trail.shift();
-    }
-    if (!trailChk.checked) trail = [];
-
-    // Camera
-    const cam = makeCamera(blend);
-    ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
-
-    // ---- Build two coordinate pictures ----
-    // Geocentric picture (Earth at origin)
-    //   Earth at (0,0), deferent center is Earth, rDef draws circle of radius a_P,
-    //   epicycle sits on top adding -rE.
-    // Heliocentric picture (Sun at origin)
-
-    // Screen positions (we'll interpolate between two pictures for smooth blend)
-    const sun_geo   = [0,0];         // (not drawn in pure geocentric)
-    const earth_geo = [0,0];
-    const planet_geo= rGeo;
-
-    const sun_helio   = [0,0];
-    const earth_helio = rE;
-    const planet_helio= rP;
-
-    const lerp = (a,b,s)=>[a[0]*(1-s)+b[0]*s, a[1]*(1-s)+b[1]*s];
-
-    const sun_v    = lerp(sun_geo,   sun_helio,   blend);
-    const earth_v  = lerp(earth_geo, earth_helio, blend);
-    const planet_v = lerp(planet_geo,planet_helio,blend);
-
-    // Orbits / guides
-    // Draw faint orbits appropriate to current view
-    ctx.setLineDash([4,6]);
-
-    // Earth orbit (only meaningful in heliocentric)
-    {
-      const center = toScreen(cam, lerp([0,0],[0,0],blend)); // both at origin anyway
-      const r = earth.a * cam.scale;
-      circle(center[0], center[1], r, "rgba(116,255,178,0.25)", null);
-    }
-
-    // Planet orbit (heliocentric) OR deferent (geocentric)
-    {
-      // When blend=0: draw deferent centered at Earth (which is origin in geo view).
-      // When blend=1: draw heliocentric orbit centered at Sun (origin).
-      // Interpolate center from Earth(geo) to Sun(helio). Both are origin, but semantics differ.
-      const center = toScreen(cam, [0,0]);
-      const r = planet.a * cam.scale;
-      const color = `rgba(255,154,162,${0.25 + 0.25*(1-blend)})`; // pinkish more on geocentric
-      circle(center[0], center[1], r, color, null);
-    }
-
-    ctx.setLineDash([]);
-
-    // Draw vectors for geocentric decomposition (fade out as blend→1)
-    {
-      const base = toScreen(cam, [0,0]); // Earth at origin in geocentric picture
-      const defEnd = toScreen(cam, rDef);
-      const epiEnd = toScreen(cam, add(rDef, rEpi));
-      // deferent vector
-      line(base[0], base[1], defEnd[0], defEnd[1], `rgba(255,154,162,${1-blend})`, 2);
-      circle(defEnd[0], defEnd[1], 3, null, `rgba(255,154,162,${1-blend})`);
-      // epicycle vector (from deferent tip to planet)
-      line(defEnd[0], defEnd[1], epiEnd[0], epiEnd[1], `rgba(199,155,255,${1-blend})`, 2);
-      circle(epiEnd[0], epiEnd[1], 3, null, `rgba(199,155,255,${1-blend})`);
-    }
-
-    // Trails (apparent geocentric path)
-    if (trail.length > 1) {
-      ctx.save();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = `rgba(123,211,255,${0.5 + 0.3*(1-blend)})`;
+    // apparent geocentric orbit (always)
+    if(trailGeo.length>1){
       ctx.beginPath();
-      const p0 = toScreen(cam, lerp(trail[0], sub(trail[0], mul(0,trail[0])), blend)); // just trail in chosen frame; we use geocentric trail and let interpolation carry it
-      ctx.moveTo(...toScreen(cam, lerp(trail[0], trail[0], blend)));
-      for (let i=1;i<trail.length;i++){
-        const p = toScreen(cam, lerp(trail[i], trail[i], blend));
-        ctx.lineTo(p[0], p[1]);
+      let p0=toScreen(camObj,trailGeo[0]);
+      ctx.moveTo(p0[0],p0[1]);
+      for(let i=1;i<trailGeo.length;i++){
+        let p=toScreen(camObj,trailGeo[i]);
+        ctx.lineTo(p[0],p[1]);
       }
-      ctx.stroke();
-      ctx.restore();
+      ctx.strokeStyle="gold";ctx.lineWidth=1.2;ctx.stroke();
     }
-
-    // Bodies
-    // Sun (fade in with blend)
-    {
-      const s = toScreen(cam, sun_v);
-      circle(s[0], s[1], 7, null, `rgba(255,198,109,${0.9*blend+0.1})`, 1);
-      circle(s[0], s[1], 14, `rgba(255,198,109,${0.35*blend})`, null);
-    }
-    // Earth
-    {
-      const e = toScreen(cam, earth_v);
-      circle(e[0], e[1], 5, null, "rgba(116,255,178,0.95)");
-      circle(e[0], e[1], 9, "rgba(116,255,178,0.35)", null);
-    }
-    // Planet (identical physical point in both views)
-    {
-      const p = toScreen(cam, planet_v);
-      circle(p[0], p[1], 5, null, "rgba(123,211,255,0.95)");
-      circle(p[0], p[1], 9, "rgba(123,211,255,0.35)", null);
-    }
-
-    // HUD
-    daysLabel.textContent = tDays.toFixed(1);
-
+    // draw bodies
+    let s=toScreen(camObj,sunV);circle(s[0],s[1],6,"#ffc66d");
+    let e=toScreen(camObj,earthV);circle(e[0],e[1],5,"#74ffb2");
+    let p=toScreen(camObj,planetV);circle(p[0],p[1],5,"#7bd3ff");
+    daysLabel.textContent=tDays.toFixed(1);
     requestAnimationFrame(tick);
   }
-
-  // Controls
-  presetSel.addEventListener('change', () => {
-    planet = PRESETS[presetSel.value];
-    // keep tDays so you can compare instantly
-  });
-
-  blendSlider.addEventListener('input', () => {
-    const v = parseFloat(blendSlider.value);
-    blendLabel.textContent = (v<0.001) ? "天動" : (v>0.999) ? "地動" : "中間";
-  });
-
-  playPauseBtn.addEventListener('click', () => {
-    running = !running;
-    playPauseBtn.textContent = running ? "⏸ 一時停止" : "▶ 再生";
-  });
-
-  resetBtn.addEventListener('click', () => {
-    tDays = 0;
-    trail = [];
-  });
-
-  stepBtn.addEventListener('click', () => {
-    running = false;
-    playPauseBtn.textContent = "▶ 再生";
-    tDays += 1.0;
-  });
-
-  // Kickoff
+  presetSel.onchange=()=>{planet=PRESETS[presetSel.value];};
+  playPauseBtn.onclick=()=>{running=!running;playPauseBtn.textContent=running?"⏸ 一時停止":"▶ 再生";};
+  resetBtn.onclick=()=>{tDays=0;trailGeo=[];};
+  stepBtn.onclick=()=>{running=false;playPauseBtn.textContent="▶ 再生";tDays+=1;};
   requestAnimationFrame(tick);
 })();
 </script>
