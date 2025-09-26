@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>天動説 ↔ 地動説 シミュレーション</title>
+<title>天動説 ↔ 地動説 + ケプラー楕円</title>
 <style>
   body { margin:0; background:#0b1020; color:#fff; font-family:sans-serif; }
   .wrap { display:grid; grid-template-columns: 1fr 320px; height:100vh; }
@@ -37,31 +37,32 @@
     <label>軌跡
       <input id="trail" type="checkbox" checked>
     </label>
+    <label>ケプラー楕円
+      <input id="kepler" type="checkbox">
+    </label>
     <button id="playPause">⏸ 一時停止</button>
     <button id="reset">⟲ リセット</button>
     <button id="step">⟼ 1日進める</button>
     <p>日数: <span id="days">0.0</span> d</p>
-    <h3>凡例</h3>
-    <p style="color:#74ffb2">● 地球</p>
-    <p style="color:#ffc66d">● 太陽</p>
-    <p style="color:#7bd3ff">● 惑星</p>
-    <p style="color:#ff9aa2">● デフェラント</p>
-    <p style="color:#c79bff">● エピサイクル</p>
-    <p style="color:gold">― 見かけの地心軌道</p>
   </div>
 </div>
 <script>
 (()=>{
   const TAU=Math.PI*2;
   const PRESETS={
-    Mercury:{P:88,a:0.387},Venus:{P:225,a:0.723},Earth:{P:365,a:1},
-    Mars:{P:687,a:1.524},Jupiter:{P:4333,a:5.203},Saturn:{P:10759,a:9.537}
+    Mercury:{P:88,a:0.387,e:0.206},
+    Venus:{P:225,a:0.723,e:0.007},
+    Earth:{P:365,a:1,e:0.017},
+    Mars:{P:687,a:1.524,e:0.093},
+    Jupiter:{P:4333,a:5.203,e:0.049},
+    Saturn:{P:10759,a:9.537,e:0.056}
   };
   const cv=document.getElementById("cv"),ctx=cv.getContext("2d");
   const presetSel=document.getElementById("preset");
   const blendSlider=document.getElementById("blend");
   const speedInput=document.getElementById("speed");
   const trailChk=document.getElementById("trail");
+  const keplerChk=document.getElementById("kepler");
   const playPauseBtn=document.getElementById("playPause");
   const resetBtn=document.getElementById("reset");
   const stepBtn=document.getElementById("step");
@@ -79,7 +80,26 @@
   const add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
   const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]];
   const mul=(k,v)=>[k*v[0],k*v[1]];
-  function pos(body,t){let w=TAU/body.P;let [c,s]=rot(w*t);return [body.a*c,body.a*s];}
+
+  function posCircle(body,t){let w=TAU/body.P;let [c,s]=rot(w*t);return [body.a*c,body.a*s];}
+
+  // ケプラー方程式を解く（近似反復）
+  function solveKepler(M,e){
+    let E=M;
+    for(let i=0;i<10;i++){
+      E=E-(E-e*Math.sin(E)-M)/(1-e*Math.cos(E));
+    }
+    return E;
+  }
+  function posKepler(body,t,e){
+    const n=TAU/body.P;
+    const M=n*t;
+    const E=solveKepler(M,e);
+    const x=body.a*(Math.cos(E)-e);
+    const y=body.a*Math.sqrt(1-e*e)*Math.sin(E);
+    return [x,y];
+  }
+
   function cam(){let m=Math.max(planet.a,earth.a)+1;let scale=Math.min(cv.width,cv.height)/(2*m);return{scale,cx:cv.width/2,cy:cv.height/2};}
   function toScreen(c,v){return[c.cx+v[0]*c.scale,c.cy-v[1]*c.scale];}
   function circle(x,y,r,color){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fillStyle=color;ctx.fill();}
@@ -89,27 +109,36 @@
   function tick(now){
     let dt=(now-last)/1000;last=now;
     if(running){tDays+=dt*parseFloat(speedInput.value);}
-    const rE=pos(earth,tDays);
-    const rP=pos(planet,tDays);
+    const rE=keplerChk.checked?posKepler(earth,tDays,earth.e):posCircle(earth,tDays);
+    const rP=keplerChk.checked?posKepler(planet,tDays,planet.e):posCircle(planet,tDays);
     const rGeo=sub(rP,rE);
-    const rDef=rP;
-    const rEpi=mul(-1,rE);
+    const rDef=rP, rEpi=mul(-1,rE);
     trailGeo.push(rGeo.slice());if(trailGeo.length>TRAIL_MAX)trailGeo.shift();
     if(!trailChk.checked)trailGeo=[];
     const blend=parseFloat(blendSlider.value);
     const camObj=cam();
     ctx.clearRect(0,0,cv.width,cv.height);
+
     // interpolate view
     const sunV=[0,0];
     const earthV=[(1-blend)*0+blend*rE[0],(1-blend)*0+blend*rE[1]];
     const planetV=[(1-blend)*rGeo[0]+blend*rP[0],(1-blend)*rGeo[1]+blend*rP[1]];
-    // orbits
-    ctx.strokeStyle="rgba(255,154,162,"+(1-blend)+")";
-    ctx.beginPath();ctx.arc(camObj.cx,camObj.cy,planet.a*camObj.scale,0,TAU);ctx.stroke();
-    ctx.strokeStyle="rgba(116,255,178,"+blend+")";
-    ctx.beginPath();ctx.arc(camObj.cx,camObj.cy,earth.a*camObj.scale,0,TAU);ctx.stroke();
-    // deferent+epicycle
-    if(blend<0.99){
+
+    // 天動説の円は blend が 0 のときだけ
+    if(blend<0.001){
+      ctx.strokeStyle="#ff9aa2";
+      ctx.beginPath();
+      ctx.arc(camObj.cx,camObj.cy,planet.a*camObj.scale,0,TAU);ctx.stroke();
+    }
+    // 地動説の地球軌道は blend が 1 のときだけ
+    if(blend>0.999){
+      ctx.strokeStyle="#74ffb2";
+      ctx.beginPath();
+      ctx.arc(camObj.cx,camObj.cy,earth.a*camObj.scale,0,TAU);ctx.stroke();
+    }
+
+    // deferent + epicycle
+    if(blend<0.001){
       let base=toScreen(camObj,[0,0]);
       let def=toScreen(camObj,rDef);
       let epi=toScreen(camObj,add(rDef,rEpi));
@@ -118,6 +147,7 @@
       circle(def[0],def[1],3,"#ff9aa2");
       circle(epi[0],epi[1],3,"#c79bff");
     }
+
     // apparent geocentric orbit (always)
     if(trailGeo.length>1){
       ctx.beginPath();
@@ -129,6 +159,7 @@
       }
       ctx.strokeStyle="gold";ctx.lineWidth=1.2;ctx.stroke();
     }
+
     // draw bodies
     let s=toScreen(camObj,sunV);circle(s[0],s[1],6,"#ffc66d");
     let e=toScreen(camObj,earthV);circle(e[0],e[1],5,"#74ffb2");
@@ -136,6 +167,7 @@
     daysLabel.textContent=tDays.toFixed(1);
     requestAnimationFrame(tick);
   }
+
   presetSel.onchange=()=>{planet=PRESETS[presetSel.value];};
   playPauseBtn.onclick=()=>{running=!running;playPauseBtn.textContent=running?"⏸ 一時停止":"▶ 再生";};
   resetBtn.onclick=()=>{tDays=0;trailGeo=[];};
